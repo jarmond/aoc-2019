@@ -22,9 +22,16 @@
        (map #(Long/parseLong %))))
 
 (defn mass->fuel [mass]
-  (- (Math/floor (/ mass 3)) 2))
+  (max 0 (- (Math/floor (/ mass 3)) 2)))
+
+(defn compute-fuel-for-fuel [fuels]
+  (take-while #(not-every? zero? %)
+              (iterate #(map mass->fuel %) fuels)))
 
 (defn main []
   (let [masses (read-numbers inputfile)
-        fuels (map mass->fuel masses)]
-    (reduce + fuels)))
+        fuels (map mass->fuel masses)
+        all-fuels (compute-fuel-for-fuel fuels)]
+    (->> all-fuels
+         (map (partial reduce +))
+         (reduce +))))
