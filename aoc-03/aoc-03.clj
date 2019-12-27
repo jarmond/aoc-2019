@@ -45,20 +45,38 @@
         [x2 y2] b]
     (+ (Math/abs (- x1 x2)) (Math/abs (- y1 y2)))))
 
-(defn find-path-crossing [instr1 instr2]
-  (let [p1 (expand-turtle instr1)
-        p2 (expand-turtle instr2)
-        s1 (set (rest p1))
-        s2 (set (rest p2))]
-    (intersection s1 s2)))
+(defn path-dist
+  "Number of path steps between points on the path"
+  [a b path]
+  (let [pa (.indexOf path a)
+        pb (.indexOf path b)]
+    (Math/abs (- pa pb))))
+
+(defn total-path-dist
+  [a b paths]
+  (reduce +
+          (map (partial path-dist a b) paths)))
+
+(defn find-path-crossing [instrs]
+  (let [paths (map expand-turtle instrs)
+        sets (map (comp set rest) paths)]
+    [(apply intersection sets)
+     paths]))
 
 (defn nearest-neighbour-distance [pt others]
   (apply min (map (partial manhattan-dist pt) others)))
 
-(defn find-nearest-crossing-distance [instr1 instr2]
+(defn find-nearest-crossing-distance [instrs]
   (nearest-neighbour-distance
    [0 0]
-   (find-path-crossing instr1 instr2)))
+   (first (find-path-crossing instrs))))
+
+(defn nearest-path-distance [pt others paths]
+  (apply min (map #(total-path-dist pt % paths) others)))
+
+(defn find-nearest-crossing-path-distance [instrs]
+  (let [[crossings paths] (find-path-crossing instrs)]
+    (nearest-path-distance [0 0] crossings paths)))
 
 ;;; Interface
 
@@ -77,15 +95,19 @@
     (map read-csv-line)))
 
 (defn run-test [instrs expected]
-  (let [result (apply find-nearest-crossing-distance instrs)]
+  (let [result (find-nearest-crossing-distance instrs)]
     (= result expected)))
 
 (defn run-tests []
   (map
-   (fn [{[wire1 wire2] :wire distance :distance}]
-     (run-test [(read-csv-line wire1) (read-csv-line wire2)] distance))
+   (fn [{wires :wire distance :distance}]
+     (run-test (map read-csv-line wires) distance))
    examples))
 
 (defn run-file [filename]
   (let [instrs (read-csv filename)]
-    (apply find-nearest-crossing-distance instrs)))
+    (find-nearest-crossing-distance instrs)))
+
+(defn run-file-path-dist [filename]
+  (let [instrs (read-csv filename)]
+    (find-nearest-crossing-path-distance instrs)))
