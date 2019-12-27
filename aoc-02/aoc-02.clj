@@ -16,6 +16,8 @@
 
 (def memory (atom {}))
 
+(def ^:dynamic *verbose* true)
+
 (defn reset-mem []
   (swap! memory (constantly {})))
 
@@ -34,10 +36,10 @@
             x (read-mem locx)
             y (read-mem locy)]
         (do
-          (print "OP " op x y rest more))
-          (newline)
+          (when *verbose*
+            (println "OP " op x y rest more))
           (write-mem locr ((ops op) x y))
-          (recur more)))))
+          (recur more))))))
 
 (defn execute-dynamic
   "Execute code as dynamic program tape which can self modify"
@@ -51,8 +53,8 @@
         (when-not (or (zero? op) (= op halt))
           (let [x (read-mem ptrx)
                 y (read-mem ptry)]
-            (print "PC " pc "OP " op x y)
-            (newline)
+            (when *verbose*
+              (println "PC " pc "OP " op x y))
             (write-mem ptrr ((ops op) x y))
             (recur (+ pc 4))))))))
 
@@ -70,14 +72,31 @@
   (dotimes [pc (count program)]
     (write-mem pc (program pc))))
 
-(defn init-system []
-  (write-mem 1 12)
-  (write-mem 2 2))
+(defn init-system [noun verb]
+  (write-mem 1 noun)
+  (write-mem 2 verb))
 
-(defn main []
-  (let [program (read-csv-numbers inputfile)]
-    (reset-mem)
-    (load-program program)
-    (init-system)
-    (execute-dynamic 0 (count program))
-    (print "POS 0 =" (read-mem 0))))
+(defn run
+  ([]
+   (run 12 2))
+  ([noun verb]
+   (when *verbose*
+     (println "N" noun "V" verb))
+   (let [program (read-csv-numbers inputfile)]
+     (reset-mem)
+     (load-program program)
+     (init-system noun verb)
+     (execute-dynamic 0 (count program))
+     (let [result (read-mem 0)]
+       (when *verbose*
+         (println "POS 0 =" result))
+       result))))
+
+
+(defn find-result [target]
+  (binding [*verbose* false]
+    (let [noun-verb (for [n (range 99) v (range 99)] [n v])]
+      (take 1
+            (drop-while #(not= (first %) target)
+                        (map (bound-fn* (fn [[n v]] [(run n v) n v])) noun-verb))))))
+
