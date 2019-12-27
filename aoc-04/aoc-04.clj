@@ -16,8 +16,11 @@
 (defn adj-pairs [x]
   (partition 2 1 x))
 
+(defn some-pair-eql [pairs]
+  (some (partial apply =) pairs))
+
 (defn two-adj-digits [x]
-  (some (partial apply =) (adj-pairs x)))
+  (some-pair-eql (adj-pairs x)))
 
 (defn non-decreasing-digits [x]
   (every? #(or (neg? %) (zero? %))
@@ -28,10 +31,31 @@
        (two-adj-digits x)
        (non-decreasing-digits x)))
 
+
+(defn count-occurs
+  "Count occurrences of x in s"
+  [s x]
+  (count (filter #{x} s)))
+
+(defn contains-strict-double [x]
+  (some #(= 2 %)
+        (map (partial count-occurs x) (set x))))
+
+(defn password-predicate2 [x]
+  (and (six-digit x)
+       (contains-strict-double x)
+       (non-decreasing-digits x)))
+
 ;; Driver
 
-(defn test-values []
+(defn test-values [pred]
   (->> input
-       (pmap password-predicate)
+       (pmap pred)
        (filter identity)
        (count)))
+
+(defn test1 []
+  (test-values password-predicate))
+
+(defn test2 []
+  (test-values password-predicate2))
