@@ -1,4 +1,4 @@
-(ns aoc-2019.intcode.core
+(ns aoc-2019.intcode.v1
   (:require [clojure.string :as str]))
 
 ;;; Intcode VM
