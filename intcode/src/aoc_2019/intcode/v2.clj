@@ -39,6 +39,11 @@
   (when *verbose*
     (println "LOADED" (count program))))
 
+(defn set-pc
+  [x]
+  (dosync
+   (commute vm assoc :pc x)))
+
 (defn inc-pc
   [n]
   (dosync
@@ -59,44 +64,77 @@
 (def ops {})
 (defmacro definstr
   "Define instruction for `opcode` accepting `args` and executes `body`,
-  incrementing the program counter. The generated function takes one argument,
-  `pos-modes`, a set denoting the positional arguments which should be treated
-  as references."
-  [instr-name opcode args & body]
-  (let [nargs (count args)
+  optionally returning a parameter to location `ret`, and incrementing the
+  program counter unless set explicitly. The generated function takes one
+  argument, `pos-modes`, a set denoting the positional arguments which should be
+  treated as references. Note last argument is always treated as address (i.e.
+  not deref'd)."
+  [instr-name opcode args ret & body]
+  (let [args-and-ret (if ret (conj args ret) args)
+        nargs-and-ret (count args-and-ret)
+        nargs (count args)
+        sets-pc? ((-> body flatten set) 'set-pc)
+
         pos-modes (gensym)
         cur-pc (gensym)]
 
     (letfn [(get-arg [i]
               `(read-mem (+ ~cur-pc ~(inc i))))
 
-            (when-pos-deref [arg]
-              `(if (~pos-modes ~arg) (read-mem ~arg) ~arg))]
+            (when-pos-deref [arg pos]
+              `(if (~pos-modes ~pos) (read-mem ~arg) ~arg))]
 
-      ;; Define instruction function.
-      `(defn ~instr-name [~pos-modes]
-         (let [~cur-pc (pc)
-               ~@(interleave args (map get-arg (range nargs)))
-               ~@(interleave args (map when-pos-deref (range nargs)))]
-           ~@body)
-         (inc-pc ~(inc (count args))))
+      `(do
+         ;; Define instruction function.
+         (defn ~instr-name [~pos-modes]
+           (let [~cur-pc (pc)
+                 ~@(interleave args-and-ret (map get-arg (range nargs-and-ret)))
+                 ~@(interleave args (map when-pos-deref args (range nargs)))]
+             (when (= *verbose* :debug)
+               (cl-format true "  ~a ~{~a~^, ~}~@[ ret ~a~]~%" (name '~instr-name) ~args ~ret))
+             ~@body)
 
-      ;; Associate instruction function with opcode.
-      (alter-var-root #'ops assoc opcode
-                      {:fn (resolve instr-name) :name (name instr-name)}))))
+           ;; Auto-increment pc if not set explicitly by function.
+           ~(when-not sets-pc?
+              `(inc-pc ~(inc nargs-and-ret))))
 
-(definstr add 1 [x y r]
-  (write-mem r (+ x y)))
+         ;; Associate instruction function with opcode.
+         (alter-var-root #'ops assoc ~opcode
+                         {:fn #'~instr-name :name (name '~instr-name)})))))
 
-(definstr mul 2 [x y r]
-  (write-mem r (* x y)))
+(definstr add 1 [x y] addr
+  (write-mem addr (+ x y)))
 
-(definstr in 3 [addr]
-  )
+(definstr mul 2 [x y] addr
+  (write-mem addr (* x y)))
 
-(definstr out 4 [addr])
+(definstr in 3 [] addr
+  (print "INPUT? ")
+  (->> (read-line)
+       Integer/parseInt
+       (write-mem addr))
+  (newline))
 
-(definstr halt 99 []
+(definstr out 4 [val] nil
+  (println "OUT" val))
+
+(definstr jump-if-true 5 [t addr] nil
+  (if-not (zero? t)
+    (set-pc addr)
+    (inc-pc 3)))
+
+(definstr jump-if-false 6 [t addr] nil
+  (if (zero? t)
+    (set-pc addr)
+    (inc-pc 3)))
+
+(definstr less-than 7 [x y] addr
+  (write-mem addr (if (< x y) 1 0)))
+
+(definstr equals 8 [x y] addr
+  (write-mem addr (if (= x y) 1 0)))
+
+(definstr halt 99 [] nil
   (toggle-running))
 
 (defn extract-digit
@@ -141,14 +179,17 @@
           op (decode-opcode instr)
           modes (decode-modes instr)
           {opfn :fn opname :name} (ops op)]
-      (when *verbose*
-        (cl-format true "PC ~a OP ~a (~a) MODE ~a~%" (pc) op opname modes))
+      (if (nil? opfn)
+        (cl-format true "PC ~a ERR NIL" (pc))
+        (do
+          (when *verbose*
+            (cl-format true "PC ~a OP ~a (~a) MODE ~a~%" (pc) op opname modes))
 
-      ;; Execute
-      (opfn (set (index-of-all modes 1)))
+          ;; Execute
+          (opfn (set (index-of-all modes 0)))
 
-      (when (is-running)
-        (recur)))))
+          (when (is-running)
+            (recur)))))))
 
 (defn init-system [noun verb]
   (write-mem 1 noun)
@@ -157,8 +198,10 @@
 (defn run-program
   ([noun verb]
    (when *verbose*
-     (println "N" noun "V" verb))
+     (println "N" noun "V" verb) )
    (init-system noun verb)
+   (run-program))
+  ([]
    (execute)
    (let [result (read-mem 0)]
      (when *verbose*
